@@ -1,4 +1,4 @@
-# CYD_over_Mqtt_Solar-Display(LVGL)
+# CYD_over_Mqtt_Solar-Display (LVGL)
 
 Ein MQTT-gestütztes Statusdisplay für Photovoltaikanlagen. Zeigt PV-Leistung,
 Batteriezustand, Stromfluss, Tagesstatistiken sowie Wetterdaten
@@ -38,21 +38,61 @@ beschriebenen Topic-Namen gemappt werden.
 > Growatt-, SMA-, Solax- oder Fronius-Integrationen funktionieren
 > genauso, solange die Topic-Struktur passt.
 
-- **Solar-Seite:** Großer Batterie-SOC-Arc, PV-Leistung, Netzbezug/-einspeisung,
-  Hausverbrauch, Tagesertrag, Batterie-Strom mit Lade-/Entlade-Indikator.
+- **Solar-Seite:** Großer Doppelring zeigt Batteriezustand (innen, mit
+  Farbverlauf von Rot bis Grün) und Tagesfortschritt der PV-Erzeugung
+  (außen, wechselt bei Erreichen des Tagesziels auf Grün). Darunter
+  PV-Leistung, Netz, Hausverbrauch und Tageszähler.
 - **Wetter-Seite:** Temperatur (farbcodiert), Wettersymbol, Luftfeuchte,
   Wind, Druck, Windrichtung. Quelle: Home-Assistant-Weather-Integration
   via MQTT.
 - **Settings-Seite:** Auto-Rotate an/aus, Rotate-Intervall, Helligkeit
   Tag & Nacht mit Live-Vorschau, Info-Panel (IP, RSSI, Uptime, RAM, Flash).
 - **Setup-Modus:** WLAN-AP mit QR-Code zur Schnellprovisionierung,
-  Web-Formular zum Konfigurieren aller Einstellungen.
+  Web-Formular zum Konfigurieren aller Einstellungen inklusive
+  PV-Tagesziel und Display-Controller-Typ.
 - **Automatische Helligkeit:** Sanfte Dämmerungsblende ±1h um Sonnenauf-
   und -untergang, berechnet via SunCalc aus Standort-Koordinaten.
 - **Bedienung per Touch:** Wischen Links/Rechts zwischen Solar ↔ Wetter,
   nach unten zur Settings-Seite.
 - **Unterstützt alle drei CYD-Varianten** (ST7789, ILI9341, ILI9342) —
   Display-Controller ist per Web-Setup auswählbar.
+
+---
+
+## Was zeigt das Display?
+
+### Oben
+
+- Uhrzeit links, WLAN-Symbol rechts (Farbe zeigt Signalstärke)
+
+### Großer Doppelring (Hauptanzeige)
+
+- **Innerer Ring** — Batterieladestand mit Farbverlauf von Rot (leer)
+  über Orange und Gelb bis Grün (voll); aktueller Prozentwert groß
+  in der Mitte
+- **Äußerer Ring** — Tagesfortschritt der Photovoltaik-Erzeugung
+  relativ zum gesetzten Tagesziel; gelb während des Tages, wechselt
+  auf grün sobald das Ziel erreicht ist
+- Skalenstriche alle 10% trennen die beiden Ringe optisch
+
+### Mitte
+
+- **PV-Leistung** in Gelb (groß, automatisch W oder kW)
+- **Batteriestrom** daneben mit Pfeil — gelb beim Laden, grün beim
+  Entladen
+
+### Unten — drei Zeilen
+
+- **PV-Strings** (z.B. Süd / West) — aktuelle Leistung pro Strang
+- **Netz / Hausverbrauch** — Symbole zeigen Richtung,
+  Farben zeigen Bezug oder Einspeisung
+- **Tageszähler** — erzeugte PV-Energie und Netzbezug seit Mitternacht
+
+### Bedienung
+
+- Wischen nach links/rechts wechselt zwischen Solar- und Wetterseite
+- Wischen nach unten öffnet die Einstellungen
+- Helligkeit passt sich automatisch an die Tageszeit an
 
 ---
 
@@ -133,26 +173,43 @@ Payload ist jeweils eine **Zahl als ASCII-String** (z.B. `"1234.5"` oder
 `"82"`). Einheiten siehe Tabelle. Alle Werte werden via
 `atof()` in Float umgewandelt.
 
-| Topic-Suffix | Feld im Display | Einheit | Beschreibung |
-|---|---|---|---|
-| `pv_power` | PV-Leistung gesamt | W | Summe aller PV-Stränge. Wird groß dargestellt |
-| `pv1_power` | PV1-Leistung | W | Strang 1 (Default-Label "Sued:", im Web änderbar) |
-| `pv2_power` | PV2-Leistung | W | Strang 2 (Default-Label "West:", im Web änderbar) |
-| `battery_soc` | SOC | % | 0–100, füllt den großen Arc |
-| `battery_power` | Batterieleistung | W | positiv = Laden, negativ = Entladen |
-| `battery_current` | Batteriestrom | A | positiv = Laden (↓ gelb), negativ = Entladen (↑ grün) |
-| `battery_voltage` | Batteriespannung | V | wird aktuell nicht angezeigt |
-| `grid_ct_power` | Netzleistung | W | positiv = Bezug (↓ rot), negativ = Einspeisung (↑ grün) |
-| `load_power` | Hausverbrauch | W | Icon: Haus-Symbol |
-| `day_pv_energy` | Tagesertrag PV | kWh | Icon: Blitz |
-| `day_grid_export` | Tages-Einspeisung | kWh | aktuell nicht im UI (wurde durch Import ersetzt) |
-| `day_grid_import` | Tages-Netzbezug | kWh | Icon: Download-Pfeil (rot) |
-| `day_load_energy` | Tages-Verbrauch | kWh | wird aktuell nicht angezeigt |
-| `day_battery_charge` | Tages-Ladung | kWh | wird aktuell nicht angezeigt |
-| `day_battery_discharge` | Tages-Entladung | kWh | wird aktuell nicht angezeigt |
-| `grid_connected` | Netz verbunden | 0/1/"ON"/"OFF" | Flag, beeinflusst die Netz-Richtungsanzeige |
+#### Pflicht-Topics (werden im Display dargestellt)
 
-**Beispiel** (mit Präfix `SS/deye-12k/`):
+| Topic-Suffix | Anzeige | Einheit | Beschreibung |
+|---|---|---|---|
+| `pv_power` | PV-Leistung groß | W / kW | Summe aller PV-Stränge — große gelbe Zahl |
+| `pv1_power` | PV1 (Sued:) | W | Strang 1, Label im Web-Setup änderbar |
+| `pv2_power` | PV2 (West:) | W | Strang 2, Label im Web-Setup änderbar |
+| `battery_soc` | SOC % | % | 0–100, innerer Ring mit Farbverlauf + große Zahl |
+| `battery_current` | Batteriestrom | A | positiv = Laden (↓ gelb), negativ = Entladen (↑ grün) |
+| `grid_ct_power` | Netz | W | positiv = Bezug (↓ rot), negativ = Einspeisung (↑ grün) |
+| `load_power` | Hausverbrauch | W / kW | mit Haus-Symbol |
+| `day_pv_energy` | Tagesertrag PV | kWh | mit Blitz-Symbol; zusätzlich im äußeren Ring relativ zum Tagesziel visualisiert |
+| `day_grid_import` | Tages-Netzbezug | kWh | mit Download-Pfeil (rot) |
+
+Diese 9 Topics sind das Minimum für eine vollständige Anzeige. Wenn
+deine Datenquelle einen davon nicht liefert, bleibt das entsprechende
+Anzeigeelement leer ("--") oder der Wert auf 0.
+
+#### Reservierte Topics (werden empfangen, aber nicht angezeigt)
+
+| Topic-Suffix | Feld | Einheit | Status |
+|---|---|---|---|
+| `battery_power` | bat_power | W | reserviert für spätere Erweiterung |
+| `battery_voltage` | bat_voltage | V | reserviert für spätere Erweiterung |
+| `day_grid_export` | day_export | kWh | reserviert für spätere Erweiterung |
+| `day_load_energy` | day_load | kWh | reserviert für spätere Erweiterung |
+| `day_battery_charge` | day_bat_chg | kWh | reserviert für spätere Erweiterung |
+| `day_battery_discharge` | day_bat_dis | kWh | reserviert für spätere Erweiterung |
+| `grid_connected` | grid_connected | 0/1/"ON"/"OFF" | reserviert; geplant für Netz-Offline-Warnung |
+
+Diese Topics werden zwar empfangen und im internen Datenmodell
+gespeichert, aber aktuell nicht im UI dargestellt. Wer **MQTT-Bandbreite
+sparen** möchte, kann sie in `src/solar_data.h` einfach aus dem
+`TOPIC_MAPS`-Array auskommentieren — es werden dann keine
+Subscriptions mehr für sie angelegt.
+
+#### Beispiel-Topics (mit Präfix `SS/deye-12k/`)
 
 ```
 SS/deye-12k/pv_power          520.3
@@ -226,7 +283,7 @@ automation:
           retain: true
           payload: >
             {
-              "temperature": {{ state_attr('weather.home', 'temperature') }},
+              "temperature": {{ states('sensor.sbht_003c_9ea4_temperature') }},
               "humidity":    {{ state_attr('weather.home', 'humidity') }},
               "pressure":    {{ state_attr('weather.home', 'pressure') }},
               "wind_speed":  {{ state_attr('weather.home', 'wind_speed') }},
@@ -235,9 +292,16 @@ automation:
             }
 ```
 
-Passe `weather.home` an deinen eigenen Weather-Entity-Namen an. `retain: true`
-sorgt dafür, dass das Display beim Boot sofort den letzten bekannten Wert
-bekommt.
+`retain: true` sorgt dafür, dass das Display beim Boot sofort den
+letzten bekannten Wert bekommt.
+
+**Quellen mischen:** Im Beispiel oben kommt die `temperature` aus
+einem **eigenen Garten-Sensor** (genauerer lokaler Messwert), während
+die übrigen Wetter-Felder aus dem `weather.home`-Entity der
+Home-Assistant-Wetter-Integration stammen. So hast du die echte
+Temperatur am Standort statt eines paar Kilometer entfernten
+Wetterdienst-Werts. Ersetze die Entity-Namen in den `states(…)` und
+`state_attr(…)`-Aufrufen jeweils durch deine eigenen.
 
 ### Wechselrichter-Daten anbinden
 
@@ -357,9 +421,12 @@ Im Web-Formular konfigurierst du:
 - MQTT-Präfix für Wechselrichter-Topics
 - Wetter-Topic
 - PV-Labels (z.B. "Sued:"/"West:" oder "Dach:"/"Garten:")
+- **Tagesziel PV-Ertrag** in kWh (Default 50, definiert den
+  Maximalwert des äußeren Rings auf der Solar-Seite)
 - Standort (Latitude/Longitude) für SunCalc (Helligkeitsregelung)
 - Helligkeitswerte Tag/Nacht
 - Auto-Rotate (An/Aus, Intervall)
+- **Display-Controller** (ST7789 / ILI9341 / ILI9342)
 - Hostname (für mDNS)
 
 Nach dem Speichern startet das Gerät neu und verbindet sich.
@@ -431,17 +498,10 @@ src/
 
 ## Bedienung zur Laufzeit
 
-### Navigation
-
-```
-        Solar  ←→  Wetter
-           ↕
-        Settings
-```
-
-- **Wischen nach links/rechts:** zwischen Solar und Wetter
-- **Wischen nach unten** (nur auf Solar-Seite): zur Settings-Seite
-- **Wischen nach oben** auf der Settings-Seite: zurück zu Solar
+Die grundsätzliche Bedienung ist im Abschnitt
+[Was zeigt das Display?](#was-zeigt-das-display) beschrieben. Hier
+folgen Details zu Auto-Rotate, automatischer Helligkeit und dem
+Setup-AP-Modus.
 
 ### Auto-Rotate
 
@@ -455,7 +515,7 @@ Intervall automatisch zwischen Solar und Wetter.
 
 ### Automatische Helligkeit
 
-Das Display berechnet aus deinem Standort (Latitude/Longitude in den
+Das Display berechnet aus dem Standort (Latitude/Longitude in den
 Settings) die Sonnenauf- und -untergangszeiten und blendet die
 Helligkeit weich zwischen den konfigurierten Tag- und Nacht-Werten:
 
@@ -600,4 +660,4 @@ Das Gerät startet dann ohne Settings und geht automatisch in AP-Modus.
 
 ## Lizenz
 
-MIT License — siehe `LICENSE`.
+MIT License — siehe `LICENSE` (falls vorhanden, sonst bitte ergänzen).

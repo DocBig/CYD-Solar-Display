@@ -41,6 +41,11 @@ public:
                    _pv2_label[sizeof(_pv2_label) - 1] = '\0'; }
     }
 
+    // Tagesziel in kWh aus Settings setzen
+    void set_daily_goal(float kwh) {
+        if (kwh > 0.0f) _daily_goal_kwh = kwh;
+    }
+
     void update(const SolarData& d) {
         char buf[32];
 
@@ -48,12 +53,41 @@ public:
         float soc = isnanf(d.bat_soc) ? 0.f : d.bat_soc;
         if (soc < 0) soc = 0; if (soc > 100) soc = 100;
 
-        lv_arc_set_value(_arc, (int32_t)soc);
-        lv_obj_set_style_arc_color(_arc, soc_color(soc), LV_PART_INDICATOR);
+        // Alle 5 Segmente passend zum aktuellen SOC setzen.
+        // Jedes Segment deckt 20%-Schritte ab. Volle Segmente werden
+        // komplett gefuellt, das aktuelle Teil-Segment nur bis SOC.
+        for (int i = 0; i < SOC_SEG_COUNT; i++) {
+            int32_t seg_start = i * 20;
+            int32_t seg_end   = (i + 1) * 20;
+            int32_t fill;
+            if (soc >= seg_end)        fill = seg_end;       // komplett voll
+            else if (soc <= seg_start) fill = seg_start;     // unsichtbar
+            else                       fill = (int32_t)soc;  // teilweise
+            lv_meter_set_indicator_end_value(_arc, _ind_soc_seg[i], fill);
+        }
+        lv_obj_invalidate(_arc);
 
+        // SOC-Zahl-Farbe folgt dem oberen Schwellwert (klassische Logik)
+        lv_color_t col = soc_color(soc);
         snprintf(buf, sizeof(buf), "%d", (int)soc);
         lv_label_set_text(_lbl_soc, buf);
-        lv_obj_set_style_text_color(_lbl_soc, soc_color(soc), 0);
+        lv_obj_set_style_text_color(_lbl_soc, col, 0);
+
+        // --- Tagesziel-Ring (aussen) ---
+        // Aktueller PV-Tagesertrag relativ zum Ziel, bei 100% gekappt.
+        // Farbe: PV-gelb wenn unter Ziel, GOOD-gruen wenn erreicht.
+        float day_pv_kwh = isnanf(d.day_pv) ? 0.f : d.day_pv;
+        float goal_pct = (_daily_goal_kwh > 0.0f)
+            ? (day_pv_kwh / _daily_goal_kwh) * 100.0f
+            : 0.0f;
+        bool goal_reached = goal_pct >= 100.0f;
+        if (goal_pct < 0)   goal_pct = 0;
+        if (goal_pct > 100) goal_pct = 100;
+        lv_meter_set_indicator_end_value(_arc, _ind_goal, (int32_t)goal_pct);
+        _ind_goal->type_data.arc.color = goal_reached
+            ? lv_color_hex(theme::GOOD)
+            : lv_color_hex(theme::PV);
+        lv_obj_invalidate(_arc);
 
         // --- Batteriestrom rechts neben Leistung ---
         if (isnanf(d.bat_current)) {
@@ -83,7 +117,7 @@ public:
         // Einheit an Zahl heranschieben (nach Breitenberechnung)
         lv_obj_update_layout(_lbl_power);
         lv_obj_align_to(_lbl_power_unit, _lbl_power,
-                        LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -4);
+                        LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -14);
 
         // --- PV1 + PV2 mit konfigurierbaren Labels ---
         if (isnanf(d.pv1_power)) {
@@ -137,7 +171,7 @@ public:
         struct tm t;
         if (getLocalTime(&t, 10)) {
             char buf[12];
-            snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);
+            snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
             lv_label_set_text(_lbl_clock, buf);
         }
     }
@@ -158,6 +192,13 @@ private:
     lv_obj_t* _lbl_clock   = nullptr;
     lv_obj_t* _lbl_wifi    = nullptr;
     lv_obj_t* _arc         = nullptr;
+    lv_meter_indicator_t* _ind_goal = nullptr;
+    // SOC: 5 Segmente fuer Farbverlauf rot->orange->gelb->hellgruen->gruen
+    static constexpr int SOC_SEG_COUNT = 5;
+    lv_meter_indicator_t* _ind_soc_seg[SOC_SEG_COUNT] = {nullptr};
+
+    // Tagesziel in kWh (per set_daily_goal() aus Settings)
+    float _daily_goal_kwh = 50.0f;
     lv_obj_t* _lbl_soc     = nullptr;
     lv_obj_t* _lbl_current = nullptr;
     lv_obj_t* _lbl_power   = nullptr;
@@ -180,7 +221,7 @@ private:
         _lbl_clock = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_clock, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_clock, lv_color_hex(theme::ACCENT), 0);
-        lv_label_set_text(_lbl_clock, "--:--:--");
+        lv_label_set_text(_lbl_clock, "--:--");
         lv_obj_align(_lbl_clock, LV_ALIGN_TOP_LEFT, 8, 6);
 
         _lbl_wifi = lv_label_create(_root);
@@ -193,31 +234,108 @@ private:
     // ============================================================
     //  SOC-Block: grosser zentraler Arc, keine Label drunter
     // ============================================================
+    //  SOC-Block: grosser zentraler Meter-Ring mit Tick-Marks
+    //
+    //  Wir nutzen lv_meter (statt lv_arc), weil das native
+    //  Tick-Mark-Unterstuetzung mitbringt. Aufbau:
+    //   - 1 Skala (Range 0-100, 270 Grad, von 135 bis 45)
+    //   - Hintergrund-Arc (grau, voller Range)
+    //   - Vordergrund-Arc (SOC-farbig, dynamisch)
+    //   - Tick-Marks alle 10 Prozent quer durchs Ringband
+    // ============================================================
     void build_soc_block() {
-        // Arc: 180x180, Oberkante y=25 -> Unterkante y=205
-        _arc = lv_arc_create(_root);
-        lv_obj_set_size(_arc, 180, 180);
-        lv_obj_align(_arc, LV_ALIGN_TOP_MID, 0, 25);
+        _arc = lv_meter_create(_root);
 
-        lv_arc_set_bg_angles(_arc, 135, 45);
-        lv_arc_set_rotation(_arc, 0);
-        lv_arc_set_range(_arc, 0, 100);
-        lv_arc_set_value(_arc, 0);
+        // ── Theme-Default-Styles komplett entfernen ──
+        // lv_meter bekommt vom Default-Theme einen "Card"-Style mit
+        // gefuelltem BG, Border, Padding sowie einen "Circle"-Style.
+        // Beide entfernen wir, sonst sieht man einen weissen Punkt
+        // in der Mitte (Theme-Default-Hintergrund).
+        // WICHTIG: das muss VOR set_size/set_align passieren, weil
+        // remove_style_all auch das Layout-Verhalten zuruecksetzt.
+        lv_obj_remove_style_all(_arc);
+        lv_obj_set_style_bg_opa(_arc, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(_arc, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(_arc, 0, LV_PART_MAIN);
 
-        lv_obj_remove_style(_arc, nullptr, LV_PART_KNOB);
+        // Groesse: 220x220 (groesser als zuvor, damit zwei konzentrische
+        // Ringe Platz haben). Skala-Radius = 110.
+        lv_obj_set_size(_arc, 200, 200);
+        lv_obj_align(_arc, LV_ALIGN_TOP_MID, 0, 5);
         lv_obj_clear_flag(_arc, LV_OBJ_FLAG_CLICKABLE);
 
-        lv_obj_set_style_arc_color(_arc, lv_color_hex(theme::ARC_BG), LV_PART_MAIN);
-        lv_obj_set_style_arc_width(_arc, 18, LV_PART_MAIN);
-        lv_obj_set_style_arc_rounded(_arc, true, LV_PART_MAIN);
+        // Skala: 270 Grad Spannweite, Start bei 135 Grad.
+        // Tick-Marks lang genug um BEIDE Ringe + Lueecke quer zu durchschneiden.
+        // Geometrie:
+        //   Skala-Radius (r_edge) = 110
+        //   Tagesziel-Ring aussen: width=9, r_mod=-4  -> Bereich 101.5..110.5
+        //   Luecke: 5 px
+        //   SOC-Ring innen:        width=18, r_mod=-19 -> Bereich 82..100
+        //   Tick-Marks: outer=110 (am Skala-Edge), length=28 -> innen=82
+        //   -> Ticks durchschneiden Tagesziel-Ring + Luecke + SOC-Ring komplett
+        lv_meter_scale_t* scale = lv_meter_add_scale(_arc);
+        lv_meter_set_scale_range(_arc, scale, 0, 100, 270, 135);
+        lv_meter_set_scale_ticks(_arc, scale,
+            11,                                 // 0%, 10%, ..., 100%
+            3,                                  // Strich-Breite
+            28,                                 // lang: durch beide Ringe
+            lv_color_hex(theme::SURFACE_HI));   // dezent grau
 
-        lv_obj_set_style_arc_color(_arc, lv_color_hex(theme::GOOD), LV_PART_INDICATOR);
-        lv_obj_set_style_arc_width(_arc, 18, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_rounded(_arc, true, LV_PART_INDICATOR);
+        // ── Tagesziel-Ring (aussen) ──
+        // Hintergrund: voller grauer Ring 0..100%
+        lv_meter_indicator_t* goal_bg = lv_meter_add_arc(_arc, scale,
+            9,                                  // Breite
+            lv_color_hex(theme::ARC_BG),
+            -4);                                // r_mod: knapp am aeusseren Rand
+        lv_meter_set_indicator_start_value(_arc, goal_bg, 0);
+        lv_meter_set_indicator_end_value(_arc, goal_bg, 100);
 
-        lv_obj_set_style_bg_opa(_arc, LV_OPA_0, LV_PART_MAIN);
+        // Vordergrund: tatsaechlicher Tagesfortschritt 0..value
+        // Farbe wird in update() je nach Fuellstand gesetzt
+        // (PV-gelb wenn <100%, GOOD-gruen bei >=100%)
+        _ind_goal = lv_meter_add_arc(_arc, scale,
+            9,
+            lv_color_hex(theme::PV),
+            -4);
+        lv_meter_set_indicator_start_value(_arc, _ind_goal, 0);
+        lv_meter_set_indicator_end_value(_arc, _ind_goal, 0);
 
-        // SOC gross in der Mitte (72pt koennen wir nicht, also 48 + Offset)
+        // ── SOC-Ring (innen) ──
+        // Hintergrund: voller grauer Ring 0..100
+        lv_meter_indicator_t* bg = lv_meter_add_arc(_arc, scale,
+            18,                                 // Breite
+            lv_color_hex(theme::ARC_BG),
+            -19);                               // r_mod: nach innen
+        lv_meter_set_indicator_start_value(_arc, bg, 0);
+        lv_meter_set_indicator_end_value(_arc, bg, 100);
+
+        // Vordergrund: 5 Segmente fuer Farbverlauf
+        // 0..20%   = rot
+        // 20..40%  = orange
+        // 40..60%  = gelb
+        // 60..80%  = hellgruen
+        // 80..100% = gruen
+        // In update() werden start/end_value passend gesetzt um den
+        // aktuellen SOC abzubilden (volle Segmente komplett, das
+        // letzte Teil-Segment nur bis zum SOC-Wert).
+        const lv_color_t seg_colors[SOC_SEG_COUNT] = {
+            lv_color_hex(0xFF3B30),  // BAD - rot
+            lv_color_hex(0xFF7A00),  // dunkleres Orange
+            lv_color_hex(0xFFD60A),  // PV - gelb
+            lv_color_hex(0x9CE82C),  // hellgruen
+            lv_color_hex(0x00E676),  // GOOD - gruen
+        };
+        for (int i = 0; i < SOC_SEG_COUNT; i++) {
+            _ind_soc_seg[i] = lv_meter_add_arc(_arc, scale,
+                18,                              // Breite
+                seg_colors[i],
+                -19);                            // r_mod: nach innen
+            // Initial unsichtbar (start=end=0, ausser Segment 0)
+            lv_meter_set_indicator_start_value(_arc, _ind_soc_seg[i], i * 20);
+            lv_meter_set_indicator_end_value  (_arc, _ind_soc_seg[i], i * 20);
+        }
+
+        // SOC-Zahl gross in der Mitte
         _lbl_soc = lv_label_create(_arc);
         lv_obj_set_style_text_font(_lbl_soc, &lv_font_montserrat_48, 0);
         lv_obj_set_style_text_color(_lbl_soc, lv_color_hex(theme::GOOD), 0);
@@ -237,13 +355,13 @@ private:
     //  Batteriestrom ganz rechts (klein). Darunter Sued/West.
     // ============================================================
     void build_power_block() {
-        // PV-Zahl: linksbuendig bei x=40 (nicht ganz links, damit
-        // kleinere Zahlen optisch zentrierter wirken)
+        // PV-Zahl bei 36pt - sitzt direkt unterhalb der unteren
+        // Ring-Lueecke (Ring hat 270 Grad Bogen, untere ~30 Grad sind leer)
         _lbl_power = lv_label_create(_root);
-        lv_obj_set_style_text_font(_lbl_power, &lv_font_montserrat_40, 0);
+        lv_obj_set_style_text_font(_lbl_power, &lv_font_montserrat_36, 0);
         lv_obj_set_style_text_color(_lbl_power, lv_color_hex(theme::PV), 0);
         lv_label_set_text(_lbl_power, "0");
-        lv_obj_set_pos(_lbl_power, 40, 188);
+        lv_obj_set_pos(_lbl_power, 40, 180);
 
         _lbl_power_unit = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_power_unit, &lv_font_montserrat_20, 0);
@@ -253,55 +371,56 @@ private:
         // nicht bei (0,0) = oben links ueber der Uhrzeit haengt, bevor
         // update() das erste Mal via align_to nachpositioniert.
         lv_obj_align_to(_lbl_power_unit, _lbl_power,
-                        LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -4);
+                        LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -14);
 
         // Batteriestrom rechts (klein, mit Pfeil) - feste Position am rechten Rand
         _lbl_current = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_current, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_current, lv_color_hex(theme::TEXT_MUTED), 0);
         lv_label_set_text(_lbl_current, "-- A");
-        lv_obj_align(_lbl_current, LV_ALIGN_TOP_RIGHT, -10, 206);
+        lv_obj_align(_lbl_current, LV_ALIGN_TOP_RIGHT, -10, 200);
 
-        // Sued/West darunter
+        // Sued/West darunter, mehr Luft zur Power-Zeile
         _lbl_sued = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_sued, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(_lbl_sued, lv_color_hex(theme::PV), 0);
+        lv_obj_set_style_text_color(_lbl_sued, lv_color_hex(theme::GOOD), 0);
         lv_label_set_text(_lbl_sued, "Sued: --");
-        lv_obj_set_pos(_lbl_sued, 12, 242);
+        lv_obj_set_pos(_lbl_sued, 12, 240);
 
         _lbl_west = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_west, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(_lbl_west, lv_color_hex(theme::PV), 0);
+        lv_obj_set_style_text_color(_lbl_west, lv_color_hex(theme::GOOD), 0);
         lv_label_set_text(_lbl_west, "West: --");
-        lv_obj_set_pos(_lbl_west, 128, 242);
+        lv_obj_set_pos(_lbl_west, 128, 240);
     }
 
     // ============================================================
     //  Footer
     // ============================================================
     void build_footer() {
+        // Zeilenabstand 24 px (vorher 18 px) fuer mehr Luft
         _lbl_grid = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_grid, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_grid, lv_color_hex(theme::TEXT_MUTED), 0);
         lv_label_set_text(_lbl_grid, LV_SYMBOL_REFRESH "  0 W");
-        lv_obj_set_pos(_lbl_grid, 12, 278);
+        lv_obj_set_pos(_lbl_grid, 12, 274);
 
         _lbl_load = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_load, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_load, lv_color_hex(theme::TEXT), 0);
         lv_label_set_text(_lbl_load, LV_SYMBOL_HOME "  0 W");
-        lv_obj_set_pos(_lbl_load, 128, 278);
+        lv_obj_set_pos(_lbl_load, 128, 274);
 
         _lbl_day = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_day, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_day, lv_color_hex(theme::PV), 0);
         lv_label_set_text(_lbl_day, LV_SYMBOL_CHARGE "  0.0 kWh");
-        lv_obj_set_pos(_lbl_day, 12, 302);
+        lv_obj_set_pos(_lbl_day, 12, 298);
 
         _lbl_export = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_export, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_export, lv_color_hex(theme::BAD), 0);
         lv_label_set_text(_lbl_export, LV_SYMBOL_DOWNLOAD "  0.0 kWh");
-        lv_obj_set_pos(_lbl_export, 128, 302);
+        lv_obj_set_pos(_lbl_export, 128, 298);
     }
 };

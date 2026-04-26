@@ -399,6 +399,7 @@ void setup() {
         ui_solar_page.create(tile_solar);
         ui_solar_page.set_pv_labels(wifiMgr.settings.pv1_label,
                                     wifiMgr.settings.pv2_label);
+        ui_solar_page.set_daily_goal(wifiMgr.settings.daily_pv_goal_kwh);
         ui_weather_page.create(tile_weather);
 
         // Settings-Seite mit Callbacks verdrahten

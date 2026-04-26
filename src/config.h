@@ -15,8 +15,8 @@
 #define C_SOC_BG      0x632C   // Dunkelgrau (Gauge Hintergrund)
 
 #define C_GOOD        #70ec18   // Grün
-#define C_MID         0xFD20   // Orange
-#define C_BAD         0xF800   // Rot
+#define C_MID         #ed8116b5   // Orange
+#define C_BAD         #fc3232da   // Rot
 
 #define C_PV          0xFE80   // Gelb-Gold (PV Leistung)
 #define C_CLOCK       0x041F   // Blau (Uhrzeit)

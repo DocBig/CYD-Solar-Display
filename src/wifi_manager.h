@@ -38,6 +38,8 @@ struct Settings {
     char  hostname[32]    = "solar-display";
     // Panel-Variante: "ST7789" (default), "ILI9341", "ILI9342"
     char  panel_type[16]  = "ST7789";
+    // Tagesziel fuer PV-Ertrag (kWh) — Default 50
+    float daily_pv_goal_kwh = 50.0f;
 
     bool isValid() const {
         return strlen(wifi_ssid) > 0 && strlen(mqtt_host) > 0;
@@ -85,6 +87,7 @@ public:
         if (strlen(settings.panel_type) == 0) {
             strncpy(settings.panel_type, "ST7789", sizeof(settings.panel_type) - 1);
         }
+        settings.daily_pv_goal_kwh = prefs.getFloat("day_goal", 50.0f);
 
         prefs.end();
         return settings.isValid();
@@ -115,6 +118,7 @@ public:
         prefs.putBool("inv_disp",      settings.invert_display);
         prefs.putString("hostname",    settings.hostname);
         prefs.putString("panel_type",  settings.panel_type);
+        prefs.putFloat("day_goal",     settings.daily_pv_goal_kwh);
         prefs.putBool("configured",    true);
 
         prefs.end();
@@ -278,6 +282,10 @@ private:
   <label>Max PV Leistung (W)</label>
   <input type="number" name="pv_max" value=")rawhtml" + String((int)settings.pv_max_power) + R"rawhtml(">
   <p class="hint">Fuer Gauge-Skalierung (z.B. 15000)</p>
+
+  <label>Tagesziel PV-Ertrag (kWh)</label>
+  <input type="number" step="0.1" min="1" max="500" name="day_goal" value=")rawhtml" + String(settings.daily_pv_goal_kwh, 1) + R"rawhtml(">
+  <p class="hint">Aussenring auf der Solar-Seite zeigt heutigen Ertrag relativ zum Ziel. Default 50.0 kWh.</p>
 </div>
 
 <div class="card">
@@ -355,6 +363,8 @@ function scan(){
         strncpy(settings.pv2_label,   arg("pv2_label").c_str(),   sizeof(settings.pv2_label) - 1);
         settings.pv_max_power = arg("pv_max").toFloat();
         if (settings.pv_max_power < 100) settings.pv_max_power = 15000;
+        settings.daily_pv_goal_kwh = arg("day_goal").toFloat();
+        if (settings.daily_pv_goal_kwh < 1.0f) settings.daily_pv_goal_kwh = 50.0f;
 
         // Wetter
         strncpy(settings.weather_topic, arg("w_topic").c_str(), sizeof(settings.weather_topic) - 1);
