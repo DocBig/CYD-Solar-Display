@@ -3,19 +3,20 @@
 //  ESP32-2432S028 (Cheap Yellow Display, ST7789-Variante)
 //
 //  Features:
-//    - Tileview mit zwei horizontal wischbaren Seiten:
+//    - Tileview mit drei horizontal wischbaren Seiten:
 //        * Solar  — SOC-Arc, PV-Leistung, Netz/Last, Tagesertrag
 //        * Wetter — Bitmap-Icon, Temperatur, Feuchte, Wind, Druck
-//    - Auto-Rotate (optional, aus Settings)
+//        * Flow   — Energiefluss-Diagramm (PV/Akku/Netz/Haus)
+//    - Settings-Seite vertikal unter Solar
+//    - Auto-Rotate (optional, aus Settings) — rotiert horizontal
 //    - Day/Night-Brightness via SunCalc + sanfter Daemmerungsblende
 //    - MQTT-Daten live: Solar-Inverter + Wetter (HA-Format)
 //    - Setup-Modus mit QR-Code-gestuetztem AP
 //      (BOOT-Taste 3s halten oder leere Settings)
 //
-//  UI-Code: src/ui/ui_solar.h, ui_weather.h, ui_setup.h
+//  UI-Code: src/ui/ui_solar.h, ui_weather.h, ui_flow.h, ui_setup.h
 //  Theme:   src/ui/ui_theme.h (Farbpalette + Hilfen)
-//  Daten:   solar_data.h, weather_data.h (unveraendert aus
-//           dem urspruenglichen TFT_eSPI-Projekt uebernommen)
+//  Daten:   solar_data.h, weather_data.h
 // ============================================================
 #include <Arduino.h>
 #include <WiFi.h>
@@ -33,6 +34,7 @@
 #include "brightness.h"
 #include "ui/ui_solar.h"
 #include "ui/ui_weather.h"
+#include "ui/ui_flow.h"
 #include "ui/ui_setup.h"
 #include "ui/ui_settings.h"
 
@@ -50,6 +52,7 @@ static WiFiClient   wifiClient;
 static PubSubClient mqtt(wifiClient);
 static UiSolar      ui_solar_page;
 static UiWeather    ui_weather_page;
+static UiFlow       ui_flow_page;
 static UiSetup      ui_setup_page;
 static UiSettings   ui_settings_page;
 static SunCalc      sunCalc;
@@ -61,12 +64,13 @@ static uint32_t     tile_ids_max = 0;
 
 // ── LVGL Draw-Buffer ───────────────────────────────────────
 // Nur EIN Buffer (nicht zwei), damit genug DRAM für WiFi/WebServer
-// bleibt. 40 Zeilen × 240 × 2 Byte = 19,2 KB. Bei Bedarf auf 30
+// bleibt. 30 Zeilen × 240 × 2 Byte = 14,4 KB. Bei Bedarf auf 25
 // runter, wenn's nochmal eng wird.
 static constexpr int SCREEN_W  = 240;
 static constexpr int SCREEN_H  = 320;
-static constexpr int BUF_LINES = 40;
+static constexpr int BUF_LINES = 30;
 static lv_color_t    buf1[SCREEN_W * BUF_LINES];
+static lv_color_t    buf2[SCREEN_W * BUF_LINES];   // ← NEU
 static lv_disp_draw_buf_t draw_buf;
 static lv_disp_drv_t      disp_drv;
 static lv_indev_drv_t     indev_drv;
@@ -319,7 +323,8 @@ void setup() {
 
     // ── LVGL ──
     lv_init();
-    lv_disp_draw_buf_init(&draw_buf, buf1, nullptr, SCREEN_W * BUF_LINES);
+    //lv_disp_draw_buf_init(&draw_buf, buf1, nullptr, SCREEN_W * BUF_LINES);
+    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, SCREEN_W * BUF_LINES);
 
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res  = SCREEN_W;
@@ -380,22 +385,24 @@ void setup() {
         // AP-Modus: dedizierte Setup-Seite mit QR und Text
         ui_setup_page.create(lv_scr_act(), AP_NAME, "192.168.4.1");
     } else {
-        // Normal-Modus: Tileview mit drei Seiten in 2D-Layout
+        // Normal-Modus: Tileview mit vier Tiles in 2D-Layout
         //
-        //   (0,0) Solar  <->  (1,0) Wetter      ← horizontal
-        //     ↕
-        //   (0,1) Settings                       ← vertikal (nur von Solar)
+        //   (0,0) Flow   <->  (1,0) Solar  <->  (2,0) Wetter    ← horizontal
+        //                            ↕
+        //                      (1,1) Settings                   ← vertikal (von Solar)
         //
         // Auto-Rotate rotiert nur in der horizontalen Reihe.
         lv_obj_t* tv = lv_tileview_create(lv_scr_act());
         lv_obj_set_style_bg_color(tv, lv_color_hex(0x0E1116), 0);
         lv_obj_set_scrollbar_mode(tv, LV_SCROLLBAR_MODE_OFF);
 
-        lv_obj_t* tile_solar    = lv_tileview_add_tile(tv, 0, 0,
-                                    (lv_dir_t)(LV_DIR_RIGHT | LV_DIR_BOTTOM));
-        lv_obj_t* tile_weather  = lv_tileview_add_tile(tv, 1, 0, LV_DIR_LEFT);
-        lv_obj_t* tile_settings = lv_tileview_add_tile(tv, 0, 1, LV_DIR_TOP);
+        lv_obj_t* tile_flow     = lv_tileview_add_tile(tv, 0, 0, LV_DIR_RIGHT);
+        lv_obj_t* tile_solar    = lv_tileview_add_tile(tv, 1, 0,
+                                    (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT | LV_DIR_BOTTOM));
+        lv_obj_t* tile_weather  = lv_tileview_add_tile(tv, 2, 0, LV_DIR_LEFT);
+        lv_obj_t* tile_settings = lv_tileview_add_tile(tv, 1, 1, LV_DIR_TOP);
 
+        ui_flow_page.create(tile_flow);
         ui_solar_page.create(tile_solar);
         ui_solar_page.set_pv_labels(wifiMgr.settings.pv1_label,
                                     wifiMgr.settings.pv2_label);
@@ -412,9 +419,12 @@ void setup() {
         lv_obj_add_event_cb(tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, nullptr);
         t_last_swipe = millis();
 
-        // Handles merken für Auto-Rotate (nur horizontal: 2 Tiles)
+        // Default auf Solar setzen
+        lv_obj_set_tile_id(tv, 1, 0, LV_ANIM_OFF);
+
+        // Handles merken für Auto-Rotate (horizontal: 3 Tiles)
         tileview     = tv;
-        tile_ids_max = 2;
+        tile_ids_max = 3;
     }
 
     Serial.printf("[Boot] RAM frei: %u Bytes\n", ESP.getFreeHeap());
@@ -441,20 +451,22 @@ void loop() {
     // ── BOOT-Taste prüfen ──
     checkAPTrigger();
 
-    // ── Uhrzeit einmal pro Sekunde (beide Seiten) ──
-    if (now - t_clock_prev > 1000) {
+    // ── Uhrzeit einmal pro 10 Sekunden (alle Seiten) ──
+    if (now - t_clock_prev > 10000) {
         t_clock_prev = now;
         ui_solar_page.update_clock();
         ui_weather_page.update_clock();
+        ui_flow_page.update_clock();
     }
 
-    // ── WiFi-Indikator alle 3s (beide Seiten) ──
-    if (now - t_wifi_prev > 3000) {
+    // ── WiFi-Indikator alle 10s (alle Seiten) ──
+    if (now - t_wifi_prev > 10000) {
         t_wifi_prev = now;
         bool online = (WiFi.status() == WL_CONNECTED) && mqtt.connected();
         int  rssi   = WiFi.RSSI();
         ui_solar_page.update_wifi(rssi, online);
         ui_weather_page.update_wifi(rssi, online);
+        ui_flow_page.update_wifi(rssi, online);
     }
 
     // ── MQTT bedienen ──
@@ -467,6 +479,7 @@ void loop() {
     if (solar.last_update != last_solar_render) {
         last_solar_render = solar.last_update;
         ui_solar_page.update(solar);
+        ui_flow_page.update(solar);
     }
     if (weather.last_update != last_weather_render) {
         last_weather_render = weather.last_update;
@@ -475,9 +488,9 @@ void loop() {
 
     // ── Auto-Rotate ──
     // Nur aktiv, wenn in Settings aktiviert und Tileview existiert.
-    // Rotiert nur in der horizontalen Reihe (row 0) zwischen Solar
-    // und Wetter. Wenn die Settings-Seite aktiv ist (row 1), wird
-    // nicht rotiert, damit der User in Ruhe einstellen kann.
+    // Rotiert nur in der horizontalen Reihe (row 0) zwischen Solar,
+    // Wetter und Flow. Wenn die Settings-Seite aktiv ist (row 1),
+    // wird nicht rotiert, damit der User in Ruhe einstellen kann.
     if (tileview && wifiMgr.settings.auto_rotate && tile_ids_max > 1) {
         uint32_t rotate_ms = (uint32_t)wifiMgr.settings.rotate_secs * 1000;
         if (rotate_ms < 3000) rotate_ms = 3000;   // Sicherheitsuntergrenze
@@ -527,6 +540,41 @@ void loop() {
     }
 
     // ── LVGL Render-Zyklus ──
-    lv_timer_handler();
-    delay(5);
+    //uint32_t time_till_next = lv_timer_handler();
+    //if (time_till_next == LV_NO_TIMER_READY) time_till_next = 5;
+    //if (time_till_next > 20) time_till_next = 20;  // Cap, damit der Rest des Loops nicht hängt
+    //delay(time_till_next);
+
+
+    // ── Performance-Diagnose ──
+    static unsigned long t_diag = 0;
+    static uint32_t loop_count = 0;
+    static uint32_t lvgl_time_total = 0;
+    static uint32_t lvgl_time_max = 0;
+    loop_count++;
+
+    unsigned long t_before = micros();
+    uint32_t time_till_next = lv_timer_handler();
+    unsigned long t_lvgl = micros() - t_before;
+    lvgl_time_total += t_lvgl;
+    if (t_lvgl > lvgl_time_max) lvgl_time_max = t_lvgl;
+
+    if (now - t_diag > 1000) {
+        Serial.printf("[DIAG] loops=%lu, lvgl_avg=%luµs, lvgl_max=%luµs, heap=%u\n",
+                    loop_count,
+                    loop_count > 0 ? lvgl_time_total / loop_count : 0,
+                    lvgl_time_max,
+                    ESP.getFreeHeap());
+        loop_count = 0;
+        lvgl_time_total = 0;
+        lvgl_time_max = 0;
+        t_diag = now;
+    }
+
+    if (time_till_next == LV_NO_TIMER_READY) time_till_next = 5;
+    if (time_till_next > 20) time_till_next = 20;
+    delay(time_till_next);
+
+
+
 }

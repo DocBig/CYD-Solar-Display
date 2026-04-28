@@ -28,7 +28,7 @@
 /*====================
    HAL SETTINGS
  *====================*/
-#define LV_DISP_DEF_REFR_PERIOD  30
+#define LV_DISP_DEF_REFR_PERIOD  50
 #define LV_INDEV_DEF_READ_PERIOD 30
 #define LV_TICK_CUSTOM           1
 #define LV_TICK_CUSTOM_INCLUDE   "Arduino.h"

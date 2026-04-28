@@ -9,8 +9,9 @@
 //
 //  Layout (240x320):
 //  - Header  y=  0.. 22  Clock + WiFi
-//  - Icon    y= 30..126  96x96 Bitmap (Sonne darunter bei
-//                        partlycloudy als 2. Layer)
+//  - Icon    y= 30..126  96x96 Bitmap (Sonne ODER Mond darunter
+//                        bei partlycloudy / partlycloudy-night
+//                        als 2. Layer)
 //  - Temp    y=135..183  Haupttemperatur, 48pt, farbig nach Wert
 //  - Cond    y=192..212  Text "Sonnig", "Regen", ...
 //  - Divider y=220
@@ -46,15 +47,19 @@ public:
         uint32_t    col;
         const char* label;
         bool        show_sun;
-        condition_to_visuals(cond, img, col, label, show_sun);
+        bool        show_moon;
+        condition_to_visuals(cond, img, col, label, show_sun, show_moon);
 
         lv_img_set_src(_img_icon, img);
         lv_obj_set_style_img_recolor(_img_icon, lv_color_hex(col), 0);
         lv_label_set_text(_lbl_cond, label);
 
-        // Sonnen-Overlay fuer partlycloudy ein-/ausblenden
-        if (show_sun) lv_obj_clear_flag(_img_sun, LV_OBJ_FLAG_HIDDEN);
-        else          lv_obj_add_flag  (_img_sun, LV_OBJ_FLAG_HIDDEN);
+        // Sonnen-Overlay fuer "partlycloudy" (Tag) ein-/ausblenden
+        if (show_sun)  lv_obj_clear_flag(_img_sun,  LV_OBJ_FLAG_HIDDEN);
+        else           lv_obj_add_flag  (_img_sun,  LV_OBJ_FLAG_HIDDEN);
+        // Mond-Overlay fuer "partlycloudy-night" ein-/ausblenden
+        if (show_moon) lv_obj_clear_flag(_img_moon, LV_OBJ_FLAG_HIDDEN);
+        else           lv_obj_add_flag  (_img_moon, LV_OBJ_FLAG_HIDDEN);
 
         // Temperatur mit Farbskala: kalt=blau, lau=weiss, warm=gelb, heiss=rot
         if (isnanf(w.temperature)) {
@@ -96,7 +101,7 @@ public:
         struct tm t;
         if (getLocalTime(&t, 10)) {
             char buf[12];
-            snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);
+            snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
             lv_label_set_text(_lbl_clock, buf);
         }
     }
@@ -118,6 +123,7 @@ private:
     lv_obj_t* _lbl_wifi   = nullptr;
     lv_obj_t* _img_icon   = nullptr;
     lv_obj_t* _img_sun    = nullptr;   // Sonnen-Overlay fuer partlycloudy
+    lv_obj_t* _img_moon   = nullptr;   // Mond-Overlay fuer partlycloudy-night
     lv_obj_t* _lbl_temp   = nullptr;
     lv_obj_t* _lbl_deg    = nullptr;
     lv_obj_t* _lbl_cond   = nullptr;
@@ -128,17 +134,20 @@ private:
 
     // ============================================================
     //  Condition → Bitmap-Icon / Farbe / deutsche Bezeichnung
-    //  show_sun = true: Sonne als 2. Layer hinter das Icon legen
-    //                   (derzeit nur fuer partlycloudy)
+    //  show_sun  = true: Sonne als 2. Layer hinter das Icon legen
+    //                    (fuer partlycloudy, Tag)
+    //  show_moon = true: Mond als 2. Layer hinter das Icon legen
+    //                    (fuer partlycloudy-night)
     // ============================================================
     void condition_to_visuals(const char* cond, const lv_img_dsc_t*& img,
                               uint32_t& col, const char*& label,
-                              bool& show_sun) {
+                              bool& show_sun, bool& show_moon) {
         // Defaults
-        img      = &w_cloudy;
-        col      = theme::TEXT_MUTED;
-        label    = "Unbekannt";
-        show_sun = false;
+        img       = &w_cloudy;
+        col       = theme::TEXT_MUTED;
+        label     = "Unbekannt";
+        show_sun  = false;
+        show_moon = false;
 
         if (!cond) return;
 
@@ -153,12 +162,22 @@ private:
             col = theme::ACCENT;
             label = "Klare Nacht";
         }
-        // Bewoelkt - mit Sonnen-Overlay
+        // Bewoelkt - mit Sonnen-Overlay (Tag)
         else if (!strcmp(cond, "partlycloudy")) {
             img = &w_cloudy;
             col = theme::TEXT_DIM;
             label = "Teils bewoelkt";
             show_sun = true;
+        }
+        // Bewoelkt - mit Mond-Overlay (Nacht)
+        // HA-Standard liefert hier oft "partlycloudy-night" oder
+        // "partly-cloudy-night". Wir akzeptieren beide.
+        else if (!strcmp(cond, "partlycloudy-night") ||
+                 !strcmp(cond, "partly-cloudy-night")) {
+            img = &w_cloudy;
+            col = theme::TEXT_DIM;
+            label = "Teils bewoelkt";
+            show_moon = true;
         }
         else if (!strcmp(cond, "cloudy") || !strcmp(cond, "overcast")) {
             img = &w_cloudy;
@@ -228,7 +247,7 @@ private:
         _lbl_clock = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_clock, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_clock, lv_color_hex(theme::ACCENT), 0);
-        lv_label_set_text(_lbl_clock, "--:--:--");
+        lv_label_set_text(_lbl_clock, "--:--");
         lv_obj_align(_lbl_clock, LV_ALIGN_TOP_LEFT, 8, 6);
 
         _lbl_wifi = lv_label_create(_root);
@@ -244,10 +263,11 @@ private:
     //  Die Bitmap-Pixel sind weiss, die gewuenschte Farbe kommt
     //  per image_recolor_opa drauf.
     //
-    //  Zweilagig: Sonne unten (standardmaessig hidden), darueber
-    //  das Haupt-Icon. Bei "partlycloudy" wird die Sonne gelb
-    //  eingeblendet und nach rechts oben versetzt, sodass sie
-    //  hinter der Wolke hervorschaut.
+    //  Dreilagig: Sonne UND Mond unten (beide standardmaessig
+    //  hidden), darueber das Haupt-Icon. Bei "partlycloudy" wird
+    //  die Sonne gelb eingeblendet, bei "partlycloudy-night" der
+    //  Mond. Beide nach rechts oben versetzt, sodass sie hinter
+    //  der Wolke hervorschauen.
     // ============================================================
     void build_icon() {
         // Sonnen-Overlay (hinten, zunaechst versteckt)
@@ -260,6 +280,16 @@ private:
         // Wolke hervorschaut (wenn sichtbar).
         lv_obj_align(_img_sun, LV_ALIGN_TOP_MID, 24, 18);
         lv_obj_add_flag(_img_sun, LV_OBJ_FLAG_HIDDEN);
+
+        // Mond-Overlay (analog, fuer partlycloudy-night)
+        _img_moon = lv_img_create(_root);
+        lv_img_set_src(_img_moon, &w_moon_small);
+        lv_obj_set_style_img_recolor(_img_moon,
+            lv_color_hex(theme::ACCENT), 0);
+        lv_obj_set_style_img_recolor_opa(_img_moon, LV_OPA_COVER, 0);
+        // Gleiche Position wie Sonnen-Overlay
+        lv_obj_align(_img_moon, LV_ALIGN_TOP_MID, 24, 18);
+        lv_obj_add_flag(_img_moon, LV_OBJ_FLAG_HIDDEN);
 
         // Haupt-Icon darueber (weil spaeter erzeugt → hoehere Z-Order)
         _img_icon = lv_img_create(_root);
@@ -279,7 +309,7 @@ private:
         lv_obj_set_style_text_color(_lbl_temp, lv_color_hex(theme::TEXT), 0);
         lv_label_set_text(_lbl_temp, "--");
         // y=135, damit unter dem 96px-Icon Platz ist (Icon y=30..126)
-        lv_obj_align(_lbl_temp, LV_ALIGN_TOP_MID, -12, 135);
+        lv_obj_align(_lbl_temp, LV_ALIGN_TOP_MID, -12, 115);
 
         _lbl_deg = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_deg, &lv_font_montserrat_24, 0);
@@ -292,7 +322,7 @@ private:
         lv_obj_set_style_text_font(_lbl_cond, &lv_font_montserrat_20, 0);
         lv_obj_set_style_text_color(_lbl_cond, lv_color_hex(theme::TEXT_DIM), 0);
         lv_label_set_text(_lbl_cond, "Warte auf Daten");
-        lv_obj_align(_lbl_cond, LV_ALIGN_TOP_MID, 0, 192);
+        lv_obj_align(_lbl_cond, LV_ALIGN_TOP_MID, 0, 172);
     }
 
     // ============================================================
@@ -307,10 +337,10 @@ private:
         lv_line_set_points(line, line_points, 2);
         lv_obj_set_style_line_color(line, lv_color_hex(theme::SURFACE_HI), 0);
         lv_obj_set_style_line_width(line, 1, 0);
-        lv_obj_set_pos(line, 0, 220);
+        lv_obj_set_pos(line, 0, 210);
 
-        add_tile("Feuchte",   &_val_hum,   12,  232, LV_SYMBOL_TINT,    theme::ACCENT);
-        add_tile("Wind",      &_val_wind, 128,  232, LV_SYMBOL_REFRESH, theme::GOOD);
+        add_tile("Feuchte",   &_val_hum,   12,  222, LV_SYMBOL_TINT,    theme::ACCENT);
+        add_tile("Wind",      &_val_wind, 128,  222, LV_SYMBOL_REFRESH, theme::GOOD);
         add_tile("Druck",     &_val_press, 12,  275, LV_SYMBOL_MINUS,   theme::MID);
         add_tile("Richtung",  &_val_dir,  128,  275, LV_SYMBOL_UP,      theme::PV);
     }

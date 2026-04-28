@@ -89,6 +89,10 @@ public:
             : lv_color_hex(theme::PV);
         lv_obj_invalidate(_arc);
 
+        // --- PV Gesamtleistung (zuerst auswerten, weil das
+        //     Layout des Batteriestroms davon abhaengt) ---
+        float pv = isnanf(d.pv_power) ? 0.f : d.pv_power;
+
         // --- Batteriestrom rechts neben Leistung ---
         if (isnanf(d.bat_current)) {
             lv_label_set_text(_lbl_current, "-- A");
@@ -107,12 +111,39 @@ public:
                 lv_color_hex(theme::TEXT_MUTED), 0);
         }
 
-        // --- PV Gesamtleistung ---
-        float pv = isnanf(d.pv_power) ? 0.f : d.pv_power;
+        // --- Hysterese fuer Darstellungsgroesse des Batteriestroms ---
+        // Bei wenig PV (z.B. nachts) wird der Akku-Strom prominent gross
+        // angezeigt - er ist dann der "Hingucker". Bei viel PV ist die
+        // PV-Zahl wichtiger, der Akku-Strom rueckt klein nach oben rechts.
+        // Schaltschwellen mit Abstand vermeiden Flackern bei Werten
+        // um die Schwelle.
+        if (pv < 10.0f)       _show_large_current = true;   // klar wenig PV
+        else if (pv > 50.0f)  _show_large_current = false;  // klar viel PV
+        // Zwischen 10 und 50 W: Zustand bleibt wie vorher (Hysterese)
+
+        if (_show_large_current) {
+            lv_obj_set_style_text_font(_lbl_current, &lv_font_montserrat_28, 0);
+            lv_obj_align(_lbl_current, LV_ALIGN_TOP_RIGHT, -10, 180);
+        } else {
+            lv_obj_set_style_text_font(_lbl_current, &lv_font_montserrat_16, 0);
+            lv_obj_align(_lbl_current, LV_ALIGN_TOP_RIGHT, -10, 200);
+        }
+
+        // --- PV-Zahl rendern ---
         if (pv < 1000) snprintf(buf, sizeof(buf), "%d", (int)pv);
         else           snprintf(buf, sizeof(buf), "%.2f", pv / 1000.0f);
         lv_label_set_text(_lbl_power, buf);
         lv_label_set_text(_lbl_power_unit, pv < 1000 ? "W" : "kW");
+
+        // Farbe der PV-Zahl folgt der gleichen Hysterese wie die
+        // Akku-Strom-Anzeige: bei "wenig PV"-Modus grau (Hingucker
+        // ist der Akku-Strom), bei "viel PV"-Modus gelb. Damit
+        // flackert nichts bei PV-Werten zwischen 0 und ~10 W.
+        lv_color_t pv_col = _show_large_current
+            ? lv_color_hex(theme::TEXT_MUTED)
+            : lv_color_hex(theme::PV);
+        lv_obj_set_style_text_color(_lbl_power,      pv_col, 0);
+        lv_obj_set_style_text_color(_lbl_power_unit, pv_col, 0);
 
         // Einheit an Zahl heranschieben (nach Breitenberechnung)
         lv_obj_update_layout(_lbl_power);
@@ -120,20 +151,31 @@ public:
                         LV_ALIGN_OUT_RIGHT_BOTTOM, 8, -14);
 
         // --- PV1 + PV2 mit konfigurierbaren Labels ---
+        // Farbe pro String: TEXT_MUTED wenn 0 W oder kein Wert,
+        // sonst PV-gelb. So sieht man auf einen Blick welcher
+        // String gerade liefert und welcher nicht.
         if (isnanf(d.pv1_power)) {
             snprintf(buf, sizeof(buf), "%s --", _pv1_label);
             lv_label_set_text(_lbl_sued, buf);
+            lv_obj_set_style_text_color(_lbl_sued, lv_color_hex(theme::TEXT_MUTED), 0);
         } else {
             snprintf(buf, sizeof(buf), "%s %d W", _pv1_label, (int)d.pv1_power);
             lv_label_set_text(_lbl_sued, buf);
+            lv_obj_set_style_text_color(_lbl_sued,
+                ((int)d.pv1_power == 0) ? lv_color_hex(theme::TEXT_MUTED)
+                                        : lv_color_hex(theme::PV), 0);
         }
 
         if (isnanf(d.pv2_power)) {
             snprintf(buf, sizeof(buf), "%s --", _pv2_label);
             lv_label_set_text(_lbl_west, buf);
+            lv_obj_set_style_text_color(_lbl_west, lv_color_hex(theme::TEXT_MUTED), 0);
         } else {
             snprintf(buf, sizeof(buf), "%s %d W", _pv2_label, (int)d.pv2_power);
             lv_label_set_text(_lbl_west, buf);
+            lv_obj_set_style_text_color(_lbl_west,
+                ((int)d.pv2_power == 0) ? lv_color_hex(theme::TEXT_MUTED)
+                                        : lv_color_hex(theme::PV), 0);
         }
 
         // --- Netz mit Richtung ---
@@ -199,6 +241,11 @@ private:
 
     // Tagesziel in kWh (per set_daily_goal() aus Settings)
     float _daily_goal_kwh = 50.0f;
+
+    // Hysterese-Zustand fuer die Anzeigegroesse des Batteriestroms.
+    // Standardmaessig gross (= viel sichtbar bei wenig PV / nachts).
+    // Wechselt erst wenn pv > 50W bzw. zurueck wenn pv < 10W.
+    bool _show_large_current = true;
     lv_obj_t* _lbl_soc     = nullptr;
     lv_obj_t* _lbl_current = nullptr;
     lv_obj_t* _lbl_power   = nullptr;
@@ -221,7 +268,7 @@ private:
         _lbl_clock = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_clock, &lv_font_montserrat_16, 0);
         lv_obj_set_style_text_color(_lbl_clock, lv_color_hex(theme::ACCENT), 0);
-        lv_label_set_text(_lbl_clock, "--:--");
+        lv_label_set_text(_lbl_clock, "--:--:--");
         lv_obj_align(_lbl_clock, LV_ALIGN_TOP_LEFT, 8, 6);
 
         _lbl_wifi = lv_label_create(_root);
@@ -383,13 +430,13 @@ private:
         // Sued/West darunter, mehr Luft zur Power-Zeile
         _lbl_sued = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_sued, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(_lbl_sued, lv_color_hex(theme::GOOD), 0);
+        lv_obj_set_style_text_color(_lbl_sued, lv_color_hex(theme::PV), 0);
         lv_label_set_text(_lbl_sued, "Sued: --");
         lv_obj_set_pos(_lbl_sued, 12, 240);
 
         _lbl_west = lv_label_create(_root);
         lv_obj_set_style_text_font(_lbl_west, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(_lbl_west, lv_color_hex(theme::GOOD), 0);
+        lv_obj_set_style_text_color(_lbl_west, lv_color_hex(theme::PV), 0);
         lv_label_set_text(_lbl_west, "West: --");
         lv_obj_set_pos(_lbl_west, 128, 240);
     }

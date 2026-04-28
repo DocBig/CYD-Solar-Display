@@ -15,8 +15,7 @@ Growatt, SMA, Solax, Fronius und allen anderen Herstellern, wenn deren
 Daten auf die im Abschnitt [Benötigte MQTT-Daten](#benötigte-mqtt-daten)
 beschriebenen Topic-Namen gemappt werden.
 
-![Solar Screen](docs/screen_solar.jpg) ![Weather Screen](docs/screen_weather.jpg)
-
+![Solar Screen](docs/CYD_Solar-Display.jpg) 
 ---
 
 ## Überblick der Funktionen

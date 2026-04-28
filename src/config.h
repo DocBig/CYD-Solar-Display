@@ -7,20 +7,20 @@
 #define TZ_INFO       "CET-1CEST,M3.5.0,M10.5.0/3"
 
 // ============================================================
-//  Display - Farben  (RGB565)
+//  Display - Farben  (RGBA Hex)
 // ============================================================
-#define C_BG          0x0000   // Schwarz
-#define C_TEXT        0xFFFF   // Weiß
-#define C_TEXT_DIM    0x8C71   // Grau
-#define C_SOC_BG      0x632C   // Dunkelgrau (Gauge Hintergrund)
+#define C_BG          #000000ff   // Schwarz
+#define C_TEXT        #ffffffff   // Weiß
+#define C_TEXT_DIM    #8c8e08ff   // Grau
+#define C_SOC_BG      #31325dff   // Dunkelgrau (Gauge Hintergrund)
 
-#define C_GOOD        #70ec18   // Grün
-#define C_MID         #ed8116b5   // Orange
+#define C_GOOD        #70ec18ff   // Grün
+#define C_MID         #ea8725c3   // Orange
 #define C_BAD         #fc3232da   // Rot
 
-#define C_PV          0xFE80   // Gelb-Gold (PV Leistung)
-#define C_CLOCK       0x041F   // Blau (Uhrzeit)
-#define C_ACCENT      0x04BF   // Blau (Akzent)
+#define C_PV          rgb(250, 242, 14)   // Gelb-Gold (PV Leistung)
+#define C_CLOCK       #2182ffff   // Blau (Uhrzeit)
+#define C_ACCENT      #2196ffff   // Blau (Akzent)
 
 // ============================================================
 //  Batterie-Schwellwerte
