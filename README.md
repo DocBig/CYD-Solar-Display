@@ -15,7 +15,7 @@ Growatt, SMA, Solax, Fronius und allen anderen Herstellern, wenn deren
 Daten auf die im Abschnitt [Benötigte MQTT-Daten](#benötigte-mqtt-daten)
 beschriebenen Topic-Namen gemappt werden.
 
-![Solar Screen](docs/CYD_Solar-Display.jpg) 
+![Solar Screen](docs/cyd_solar_overview.jpg) 
 ---
 
 ## Überblick der Funktionen
@@ -660,3 +660,13 @@ Das Gerät startet dann ohne Settings und geht automatisch in AP-Modus.
 ## Lizenz
 
 MIT License — siehe `LICENSE` (falls vorhanden, sonst bitte ergänzen).
+## Webflasher
+
+A web-based flasher is provided at `docs/index.html`. Open that file in a browser (or host the `docs/` folder via GitHub Pages) to use the webflasher UI. A copy of the prebuilt firmware is included at `docs/firmware.bin`.
+
+Usage:
+1. Put the device into flash mode (hold BOOT while powering or use the device's setup page).
+2. Open `docs/index.html` in a browser.
+3. Select `firmware.bin` and follow the on-screen instructions to flash the ESP32.
+
+Note: Verify the board is in flash mode before proceeding. Alternatively use esptool.py for manual flashing.
