@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CYD Solar Display – Web Installer</title>
+
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:        #0a0e14;
+      --surface:   #111820;
+      --border:    #1e2d3d;
+      --accent:    #00d4ff;
+      --accent2:   #FFD60A;       /* PV-Gelb (passt zum Display-Theme) */
+      --text:      #c9d4e0;
+      --text-dim:  #556878;
+      --green:     #39ff88;
+      --red:       #ff3b30;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Exo 2', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Grid-Pattern Hintergrund */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    /* Scanline-Overlay fuer CRT-Look */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,.15) 2px, rgba(0,0,0,.15) 4px
+      );
+      pointer-events: none;
+    }
+
+    .wrap {
+      position: relative; z-index: 1;
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    /* ============================================================
+       HEADER mit Doppelring-Logo
+       ============================================================ */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      margin-bottom: 2rem;
+    }
+
+    .logo-ring {
+      width: 64px; height: 64px;
+      position: relative;
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 12px rgba(0,212,255,.4));
+      animation: pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { filter: drop-shadow(0 0 12px rgba(0,212,255,.4)); }
+      50%     { filter: drop-shadow(0 0 22px rgba(0,212,255,.8)); }
+    }
+
+    .logo-ring svg { width: 100%; height: 100%; }
+
+    @keyframes rotate { to { stroke-dashoffset: -188.5; } }
+    .logo-ring .ring-goal { animation: rotate 4s linear infinite; }
+
+    .title-block h1 {
+      font-size: 1.6rem; font-weight: 800;
+      letter-spacing: .04em; color: #fff;
+    }
+    .title-block h1 span { color: var(--accent); }
+    .title-block p {
+      font-size: .8rem; color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+      margin-top: .2rem;
+    }
+
+    /* ============================================================
+       HERO-BILD (Display-Showcase ganz oben)
+       ============================================================ */
+    .hero {
+      position: relative;
+      margin-bottom: 2rem;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #000;
+      box-shadow:
+        0 0 40px rgba(0,212,255,.15),
+        inset 0 0 60px rgba(0,0,0,.6);
+    }
+
+    .hero img {
+      width: 100%; height: auto; display: block;
+      opacity: .98;
+    }
+
+    /* Subtile Cyan-Glow-Linie oben */
+    .hero::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      z-index: 2;
+    }
+
+    /* "Live"-Anzeige oben rechts auf dem Hero */
+    .hero-badge {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(10,14,20,.85);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: .3rem .6rem;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .65rem;
+      color: var(--accent);
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      backdrop-filter: blur(4px);
+      z-index: 2;
+    }
+
+    .hero-badge::before {
+      content: '●';
+      color: var(--green);
+      margin-right: .4rem;
+      animation: blink 1.5s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50%     { opacity: .3; }
+    }
+
+    /* ============================================================
+       STATUSBAR
+       ============================================================ */
+    .statusbar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .6rem 1rem;
+      display: flex; align-items: center; gap: .7rem;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .78rem; color: var(--text-dim);
+      margin-bottom: 2rem;
+    }
+
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-dim); flex-shrink: 0;
+    }
+    .dot.ok   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.warn { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+
+    /* ============================================================
+       CARDS
+       ============================================================ */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.8rem 2rem;
+      margin-bottom: 1.4rem;
+      position: relative; overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: .5;
+    }
+
+    .card-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .7rem; color: var(--accent);
+      letter-spacing: .15em; text-transform: uppercase;
+      margin-bottom: .8rem;
+    }
+
+    .card h2 {
+      font-size: 1.2rem; font-weight: 600;
+      color: #fff; margin-bottom: .5rem;
+    }
+    .card p {
+      font-size: .88rem; line-height: 1.65; color: var(--text);
+    }
+
+    /* ============================================================
+       INSTALL-BUTTON
+       ============================================================ */
+    .install-zone {
+      margin-top: 1.4rem;
+      display: flex; flex-direction: column;
+      align-items: flex-start; gap: .8rem;
+    }
+
+    esp-web-install-button { --esp-tools-button-color: var(--accent); }
+    esp-web-install-button::part(button) {
+      background: linear-gradient(135deg, #005f73, #00a8cc);
+      color: #fff; border: none; border-radius: 8px;
+      padding: .85rem 2rem;
+      font-family: 'Exo 2', sans-serif; font-size: 1rem; font-weight: 600;
+      letter-spacing: .06em; cursor: pointer;
+      box-shadow: 0 0 20px rgba(0,168,204,.35);
+      transition: box-shadow .2s;
+    }
+    esp-web-install-button::part(button):hover {
+      box-shadow: 0 0 30px rgba(0,212,255,.55);
+    }
+
+    .browser-hint {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .75rem; color: var(--accent2);
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .browser-hint::before { content: '⚠'; }
+
+    /* ============================================================
+       STEPS
+       ============================================================ */
+    .steps {
+      counter-reset: step; list-style: none;
+      display: flex; flex-direction: column; gap: .9rem;
+    }
+    .steps li {
+      display: flex; gap: 1rem; align-items: flex-start;
+      counter-increment: step;
+    }
+    .steps li::before {
+      content: counter(step);
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 1px solid var(--accent); color: var(--accent);
+      font-family: 'Share Tech Mono', monospace; font-size: .8rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: .05rem;
+    }
+    .steps li span { font-size: .88rem; line-height: 1.6; color: var(--text); }
+    .steps li span strong { color: #fff; }
+
+    /* ============================================================
+       INFO-CHIPS
+       ============================================================ */
+    .info-row {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: .8rem; margin-top: 1.1rem;
+    }
+    @media (max-width: 500px) { .info-row { grid-template-columns: 1fr; } }
+
+    .info-chip {
+      background: rgba(0,212,255,.05);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .7rem .9rem; font-size: .8rem;
+    }
+    .info-chip .ic-label {
+      font-family: 'Share Tech Mono', monospace; font-size: .68rem;
+      color: var(--text-dim); text-transform: uppercase;
+      letter-spacing: .1em; margin-bottom: .25rem;
+    }
+    .info-chip .ic-val { color: #fff; font-weight: 600; }
+
+    /* ============================================================
+       PIN-TABELLE
+       ============================================================ */
+    .wiring {
+      width: 100%; border-collapse: collapse;
+      margin-top: 1rem;
+      font-family: 'Share Tech Mono', monospace; font-size: .8rem;
+    }
+    .wiring thead tr { border-bottom: 1px solid var(--border); }
+    .wiring th {
+      text-align: left; padding: .4rem .6rem;
+      color: var(--text-dim); font-size: .68rem;
+      text-transform: uppercase; letter-spacing: .1em; font-weight: 400;
+    }
+    .wiring td {
+      padding: .45rem .6rem; color: var(--text);
+      border-bottom: 1px solid rgba(30,45,61,.6);
+    }
+    .wiring td:first-child { color: var(--accent2); }
+    .wiring td:last-child  { color: var(--green); }
+
+    /* ============================================================
+       MQTT-TOPIC-CHIPS
+       ============================================================ */
+    .topic-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: .5rem; margin-top: .9rem;
+    }
+    @media (max-width: 500px) { .topic-grid { grid-template-columns: 1fr; } }
+
+    .topic-chip {
+      background: rgba(0,212,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: .5rem .75rem; font-size: .78rem;
+    }
+    .topic-chip .t-suffix {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .76rem; color: var(--accent);
+    }
+    .topic-chip .t-desc {
+      color: var(--text-dim); margin-top: .15rem;
+      font-size: .72rem;
+    }
+
+    .topic-chip.reserved {
+      opacity: .5;
+      border-style: dashed;
+    }
+    .topic-chip.reserved .t-suffix { color: var(--text-dim); }
+
+    /* ============================================================
+       PAGE-PREVIEW
+       ============================================================ */
+    .page-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: .6rem; margin-top: 1rem;
+    }
+    @media (max-width: 500px) { .page-grid { grid-template-columns: 1fr; } }
+
+    .page-preview {
+      background: rgba(0,212,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .8rem;
+      text-align: center;
+    }
+    .page-preview .p-icon {
+      font-size: 1.6rem; margin-bottom: .3rem;
+    }
+    .page-preview .p-name {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .72rem; color: var(--accent);
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .page-preview .p-desc {
+      font-size: .72rem; color: var(--text-dim);
+      margin-top: .3rem;
+    }
+
+    /* ============================================================
+       TICKER
+       ============================================================ */
+    .ticker {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .72rem; color: var(--text-dim);
+      margin-top: 1rem; overflow: hidden; white-space: nowrap;
+    }
+    .ticker-inner {
+      display: inline-block;
+      animation: ticker 30s linear infinite;
+    }
+    @keyframes ticker {
+      0%   { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+
+    /* ============================================================
+       FOOTER
+       ============================================================ */
+    footer {
+      margin-top: 3rem; text-align: center;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .72rem; color: var(--text-dim);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ========================================================
+       HEADER mit Doppelring-Logo
+       ======================================================== -->
+  <header>
+    <div class="logo-ring">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" stroke-linecap="round">
+        <!-- Aeusserer Tagesziel-Ring -->
+        <path d="M 16,48 A 22,22 0 1 1 48,48"
+              stroke="#FFD60A" stroke-width="3"
+              stroke-dasharray="6 4" class="ring-goal"/>
+
+        <!-- Innerer SOC-Ring mit Farbverlauf -->
+        <defs>
+          <linearGradient id="soc-grad" x1="0%" y1="100%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#FF3B30"/>
+            <stop offset="25%"  stop-color="#FF7A00"/>
+            <stop offset="50%"  stop-color="#FFD60A"/>
+            <stop offset="75%"  stop-color="#9CE82C"/>
+            <stop offset="100%" stop-color="#00E676"/>
+          </linearGradient>
+        </defs>
+        <path d="M 19,45 A 17,17 0 1 1 45,45"
+              stroke="url(#soc-grad)" stroke-width="5"/>
+
+        <!-- Tick-Marks -->
+        <line x1="32" y1="6"  x2="32" y2="12" stroke="#1e2d3d" stroke-width="1.5"/>
+        <line x1="13" y1="20" x2="18" y2="23" stroke="#1e2d3d" stroke-width="1.5"/>
+        <line x1="51" y1="20" x2="46" y2="23" stroke="#1e2d3d" stroke-width="1.5"/>
+        <line x1="6"  y1="42" x2="13" y2="42" stroke="#1e2d3d" stroke-width="1.5"/>
+        <line x1="58" y1="42" x2="51" y2="42" stroke="#1e2d3d" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="title-block">
+      <h1>CYD Solar <span>Display</span></h1>
+      <p>// Web Installer · ESP-Web-Tools · Chrome &amp; Edge only</p>
+    </div>
+  </header>
+
+  <!-- ========================================================
+       HERO-BILD: Showcase aller Display-Seiten
+       ======================================================== -->
+  <div class="hero">
+    <span class="hero-badge">Live Display</span>
+    <img src="cyd_solar_overview.jpg"
+         alt="CYD Solar Display: Solar-, Wetter- und Settings-Seite in der Übersicht"
+         loading="eager">
+  </div>
+
+  <!-- Browser-Status -->
+  <div class="statusbar">
+    <div class="dot" id="statusdot"></div>
+    <span id="statustext">Browser wird geprüft …</span>
+  </div>
+
+  <!-- ========================================================
+       Card 01 - Flashen
+       ======================================================== -->
+  <div class="card">
+    <div class="card-label">// 01 · Flashen</div>
+    <h2>Firmware installieren</h2>
+    <p>
+      Solar-Display-Firmware für das <strong>ESP32-2432S028 (CYD)</strong>.
+      USB-Kabel anschließen, dann auf „Install" klicken. Der Display-Controller
+      wird später im Web-Setup ausgewählt — eine Firmware für alle drei
+      CYD-Varianten.
+    </p>
+    <div class="info-row">
+      <div class="info-chip">
+        <div class="ic-label">Board</div>
+        <div class="ic-val">ESP32-2432S028 CYD</div>
+      </div>
+      <div class="info-chip">
+        <div class="ic-label">Display</div>
+        <div class="ic-val">2.8" 240×320 Touch</div>
+      </div>
+      <div class="info-chip">
+        <div class="ic-label">Panel</div>
+        <div class="ic-val">ST7789 / ILI9341 / ILI9342</div>
+      </div>
+      <div class="info-chip">
+        <div class="ic-label">Quelle</div>
+        <div class="ic-val">MQTT (Sunsynk + HA)</div>
+      </div>
+    </div>
+    <div class="install-zone">
+      <esp-web-install-button manifest="manifest.json">
+        <span slot="unsupported">
+          <span class="browser-hint">Web Serial nicht unterstützt. Bitte Chrome oder Edge verwenden.</span>
+        </span>
+      </esp-web-install-button>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       Card 02 - Hardware
+       ======================================================== -->
+  <div class="card">
+    <div class="card-label">// 02 · Hardware</div>
+    <h2>Cheap Yellow Display</h2>
+    <p>
+      Das CYD ist ein günstiger ESP32 mit aufgelötetem 2.8"-Touchscreen
+      (ca. 8–15 €). Erhältlich auf AliExpress, Amazon und bei seriösen
+      Händlern. Achte auf die <strong>"2USB"-Variante</strong> mit
+      USB-C und Micro-USB (besser zugänglicher Bootloader).
+    </p>
+    <table class="wiring">
+      <thead>
+        <tr><th>Anschluss</th><th>Pins</th><th>Funktion</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>HSPI (Display)</td><td>14, 13, 12, 2, 15</td><td>Panel-SPI-Bus</td></tr>
+        <tr><td>VSPI (Touch)</td><td>25, 32, 39, 33, 36</td><td>XPT2046-Controller</td></tr>
+        <tr><td>Backlight</td><td>GPIO 21</td><td>PWM-Helligkeit</td></tr>
+        <tr><td>BOOT-Taste</td><td>GPIO 0</td><td>Setup-AP auslösen (3s halten)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:.8rem; font-size:.78rem; color:var(--text-dim); font-family:'Share Tech Mono',monospace;">
+      ⓘ Stromversorgung über USB · Sunsynk-Kommunikation läuft komplett über MQTT (kein direkter Anschluss am Wechselrichter)
+    </p>
+  </div>
+
+  <!-- ========================================================
+       Card 03 - Erste Schritte
+       ======================================================== -->
+  <div class="card">
+    <div class="card-label">// 03 · Erste Schritte nach dem Flash</div>
+    <h2>Einrichtung</h2>
+    <ol class="steps">
+      <li><span>Display zeigt nach dem ersten Boot einen <strong>QR-Code</strong> für den eingebauten <strong>Setup-Access-Point</strong></span></li>
+      <li><span>QR-Code scannen oder manuell mit dem WLAN <strong>CYD-Solar</strong> verbinden, dann <strong>http://192.168.4.1</strong> öffnen</span></li>
+      <li><span>Im Web-Formular <strong>WLAN-Daten und MQTT-Server</strong> eintragen</span></li>
+      <li><span><strong>Display-Controller</strong> auswählen (ST7789 / ILI9341 / ILI9342) — bei falscher Wahl bleibt der Bildschirm weiß oder verzerrt</span></li>
+      <li><span><strong>Tagesziel</strong> für PV-Ertrag, <strong>Standort</strong> (für Sonnenauf-/-untergang) und ggf. <strong>PV-String-Labels</strong> eingeben</span></li>
+      <li><span>Speichern → ESP startet neu, verbindet sich mit dem MQTT-Broker und beginnt zu rendern</span></li>
+    </ol>
+  </div>
+
+  <!-- ========================================================
+       Card 04 - Was zeigt das Display
+       ======================================================== -->
+  <div class="card">
+    <div class="card-label">// 04 · Was zeigt das Display</div>
+    <h2>Drei Seiten, per Touch erreichbar</h2>
+    <div class="page-grid">
+      <div class="page-preview">
+        <div class="p-icon" style="color:var(--accent2);">☀</div>
+        <div class="p-name">Solar</div>
+        <div class="p-desc">Doppelring SOC + Tagesziel, alle Live-Werte</div>
+      </div>
+      <div class="page-preview">
+        <div class="p-icon" style="color:var(--accent);">⛅</div>
+        <div class="p-name">Wetter</div>
+        <div class="p-desc">Temperatur, Conditions, Tag/Nacht-Modus</div>
+      </div>
+      <div class="page-preview">
+        <div class="p-icon" style="color:var(--green);">⚙</div>
+        <div class="p-name">Settings</div>
+        <div class="p-desc">Helligkeit, Auto-Rotate, Setup-AP, Info</div>
+      </div>
+    </div>
+    <p style="margin-top:1rem;">
+      Die <strong>Solar-Seite</strong> ist Hauptanzeige: ein großer Doppelring
+      zeigt den Batteriezustand mit <span style="color:var(--red);">Rot→</span><span
+      style="color:var(--accent2);">Gelb→</span><span style="color:var(--green);">Grün</span>
+      Farbverlauf, der äußere Ring den Tagesfortschritt der Photovoltaik
+      relativ zum gesetzten Ziel.
+    </p>
+    <p style="margin-top:.8rem; font-size:.82rem; color:var(--text-dim);">
+      Wischen <strong>links/rechts</strong> wechselt zwischen Solar und Wetter ·
+      <strong>nach unten</strong> öffnet die Settings · Helligkeit folgt
+      automatisch dem Sonnenstand.
+    </p>
+  </div>
+
+  <!-- ========================================================
+       Card 05 - MQTT-Datenquelle
+       ======================================================== -->
+  <div class="card">
+    <div class="card-label">// 05 · MQTT-Datenquelle</div>
+    <h2>Pflicht-Topics vom Wechselrichter</h2>
+    <p>
+      9 Topics werden im Display angezeigt. Das Beispiel-Präfix
+      <code style="font-family:'Share Tech Mono',monospace; color:var(--accent2);">SS/deye-12k/</code>
+      ist im Web-Setup änderbar.
+    </p>
+    <div class="topic-grid">
+      <div class="topic-chip">
+        <div class="t-suffix">pv_power</div>
+        <div class="t-desc">PV-Gesamtleistung (W)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">battery_soc</div>
+        <div class="t-desc">Akku-Ladestand (%)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">pv1_power · pv2_power</div>
+        <div class="t-desc">Einzel-Strang-Leistung (W)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">battery_current</div>
+        <div class="t-desc">Lade-/Entladestrom (A)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">grid_ct_power</div>
+        <div class="t-desc">Netzbezug/-einspeisung (W)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">load_power</div>
+        <div class="t-desc">Hausverbrauch (W)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">day_pv_energy</div>
+        <div class="t-desc">PV-Tagesertrag (kWh)</div>
+      </div>
+      <div class="topic-chip">
+        <div class="t-suffix">day_grid_import</div>
+        <div class="t-desc">Tages-Netzbezug (kWh)</div>
+      </div>
+    </div>
+
+    <p style="margin-top:1.4rem;">Reservierte Topics (für künftige Erweiterungen):</p>
+    <div class="topic-grid">
+      <div class="topic-chip reserved">
+        <div class="t-suffix">battery_power · battery_voltage</div>
+        <div class="t-desc">Batterie-Detailwerte</div>
+      </div>
+      <div class="topic-chip reserved">
+        <div class="t-suffix">grid_connected</div>
+        <div class="t-desc">Netz-Verfügbarkeit</div>
+      </div>
+      <div class="topic-chip reserved">
+        <div class="t-suffix">day_grid_export</div>
+        <div class="t-desc">Tages-Einspeisung</div>
+      </div>
+      <div class="topic-chip reserved">
+        <div class="t-suffix">day_battery_charge/discharge</div>
+        <div class="t-desc">Tages-Akku-Bilanz</div>
+      </div>
+    </div>
+
+    <p style="margin-top:1.4rem;">
+      Wetter-Daten kommen als JSON von Home Assistant unter
+      <code style="font-family:'Share Tech Mono',monospace; color:var(--accent2);">wetter/koewa</code>
+      (Topic im Setup änderbar). Beispielhafte HA-Automation und
+      Sunsynk-Schedules siehe README.
+    </p>
+  </div>
+
+  <!-- ========================================================
+       Animierter Feature-Ticker
+       ======================================================== -->
+  <div class="ticker">
+    <div class="ticker-inner">
+      ESP32 CYD · 2.8″ Touch · LVGL 8.3 · Sunsynk/Deye · MQTT · Home Assistant · 3 Panel-Varianten · QR-Setup · Auto-Brightness · Tag/Nacht-Modus · Doppelring-Anzeige · Hysterese-Logik · Tagesziel-Tracking &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+      ESP32 CYD · 2.8″ Touch · LVGL 8.3 · Sunsynk/Deye · MQTT · Home Assistant · 3 Panel-Varianten · QR-Setup · Auto-Brightness · Tag/Nacht-Modus · Doppelring-Anzeige · Hysterese-Logik · Tagesziel-Tracking
+    </div>
+  </div>
+
+  <!-- ========================================================
+       FOOTER
+       ======================================================== -->
+  <footer>
+    <p>
+      <a href="https://github.com/DocBig/CYD-Solar-Display" target="_blank">GitHub Repository</a>
+      &nbsp;·&nbsp;
+      <a href="https://github.com/DocBig/CYD-Solar-Display/blob/main/README.md" target="_blank">Dokumentation</a>
+      &nbsp;·&nbsp;
+      MIT License
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const dot  = document.getElementById('statusdot');
+    const text = document.getElementById('statustext');
+    if ('serial' in navigator) {
+      dot.classList.add('ok');
+      text.textContent = 'Browser unterstützt Web Serial — bereit zum Flashen';
+    } else {
+      dot.classList.add('warn');
+      text.textContent = 'Web Serial nicht verfügbar — bitte Chrome oder Edge verwenden';
+    }
+  });
+</script>
+</body>
+</html>
