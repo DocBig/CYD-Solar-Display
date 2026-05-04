@@ -15,7 +15,8 @@ Growatt, SMA, Solax, Fronius und allen anderen Herstellern, wenn deren
 Daten auf die im Abschnitt [Benötigte MQTT-Daten](#benötigte-mqtt-daten)
 beschriebenen Topic-Namen gemappt werden.
 
-![Solar Screen](docs/cyd_solar_overview.jpg) 
+![Solar Screen](docs/screen_solar.jpg) ![Weather Screen](docs/screen_weather.jpg)
+
 ---
 
 ## Überblick der Funktionen
@@ -55,6 +56,8 @@ beschriebenen Topic-Namen gemappt werden.
   nach unten zur Settings-Seite.
 - **Unterstützt alle drei CYD-Varianten** (ST7789, ILI9341, ILI9342) —
   Display-Controller ist per Web-Setup auswählbar.
+- **Web-basierte Installation:** Firmware direkt aus dem Browser flashen,
+  keine PlatformIO-Installation nötig (siehe [Installation](#installation)).
 
 ---
 
@@ -92,6 +95,38 @@ beschriebenen Topic-Namen gemappt werden.
 - Wischen nach links/rechts wechselt zwischen Solar- und Wetterseite
 - Wischen nach unten öffnet die Einstellungen
 - Helligkeit passt sich automatisch an die Tageszeit an
+
+---
+
+## Installation
+
+### 🚀 Schnellinstallation per Web-Browser (empfohlen)
+
+Der einfachste Weg — **kein PlatformIO, kein Treiber-Frust, keine Kommandozeile**.
+Funktioniert in jedem aktuellen Chrome- oder Edge-Browser:
+
+> **[👉 Web-Installer öffnen](https://docbig.github.io/CYD-Solar-Display/)**
+
+Vorgehen:
+
+1. **CYD per USB anschließen**
+2. Web-Installer im Browser öffnen
+3. **"Install"** klicken, Port auswählen
+4. Firmware wird in ~30 Sekunden geflasht
+5. Display zeigt einen QR-Code → mit dem Setup-AP verbinden und konfigurieren
+
+Funktioniert für alle drei CYD-Varianten (ST7789 / ILI9341 / ILI9342) — der
+Display-Controller wird im Web-Setup ausgewählt.
+
+> **Hinweis:** Web Serial (für USB-Zugriff aus dem Browser) wird aktuell
+> nur von **Chrome, Edge und anderen Chromium-basierten Browsern** unterstützt.
+> Firefox und Safari können den Web-Installer nicht nutzen.
+
+### 🛠 Lokal kompilieren (für Entwickler)
+
+Wenn du am Code etwas ändern möchtest oder den Web-Installer-Weg nicht magst,
+kannst du auch lokal mit PlatformIO bauen — siehe Abschnitt
+[Lokal bauen](#lokal-bauen-für-entwickler) weiter unten.
 
 ---
 
@@ -438,7 +473,11 @@ Nach dem Speichern startet das Gerät neu und verbindet sich.
 
 ---
 
-## Bauen und Flashen
+## Lokal bauen (für Entwickler)
+
+Falls du Code-Änderungen vornehmen willst oder den Web-Installer
+nicht nutzen kannst, kannst du das Projekt mit **PlatformIO**
+selbst bauen.
 
 Das Projekt nutzt **PlatformIO**.
 
@@ -645,6 +684,43 @@ Das Gerät startet dann ohne Settings und geht automatisch in AP-Modus.
 
 ---
 
+## Ideen für später
+
+Notizen für mögliche zukünftige Erweiterungen — kein konkreter Plan,
+eher Gedanken zum Vormerken:
+
+- **Statistik-Seite** als dritte Tile auf der horizontalen Achse
+  (`Solar ↔ Wetter ↔ Statistik`) mit Tageswerten für Eigenverbrauch,
+  Autarkiegrad, Bilanz und Aufschlüsselung Erzeugung/Verbrauch.
+  Die dafür nötigen MQTT-Werte (`day_load_energy`, `day_grid_export`,
+  `day_battery_charge`, `day_battery_discharge`) werden bereits
+  empfangen und sind in `solar_data.h` als reserviert markiert.
+- **Mini-Eigenverbrauchsquote** als kleiner Zusatz auf der Solar-Seite,
+  z.B. neben dem Tagesertrag: "28.1 kWh / 62%". Geringerer Aufwand,
+  täglich relevant.
+- **Netz-Offline-Warnung** — `grid_connected` wird empfangen aber
+  nicht ausgewertet. Bei Ausfall könnte die Netz-Anzeige in der
+  Footer-Zeile als Warnung gerendert werden.
+- **Wechselrichter-Fehlercodes** als Warn-Banner oben — falls die
+  MQTT-Quelle das liefert.
+- **Custom-Font mit Umlauten** — aktuell schreiben wir "Bewoelkt"
+  weil das Standard-Montserrat die deutschen Sonderzeichen nicht hat.
+- **Mehrfarbige Wetter-Icons** statt einfarbiger Bitmaps — alle Icons
+  als echte RGB565-Bitmaps mit Schattierungen, Texturen und mehreren
+  Farbbereichen pro Icon. Würde das Display optisch deutlich
+  hochwertiger machen, kostet aber Flash-Speicher (geschätzt
+  300+ KB statt 190 KB) und Aufwand für saubere Pixel-Art-Erstellung
+  oder Konvertierung von hochauflösenden Vorlagen.
+- **Dual-Core-Aufteilung** über `xTaskCreatePinnedToCore()`:
+  Network-Task (WiFi, MQTT, WebServer) auf Core 0, UI-Task
+  (LVGL, Display, Touch) auf Core 1. Würde sicherstellen dass
+  Netzwerk-Aktivität die UI nie blockieren kann. **Nur sinnvoll
+  wenn tatsächlich Performance-Probleme auftreten** (UI-Stottern,
+  Hänger bei Reconnects). Aktuell läuft das Single-Loop-Design
+  flüssig — Komplexität nicht ohne echten Grund einbauen.
+
+---
+
 ## Credits
 
 - Basis-UI aufgebaut mit [LVGL 8.3](https://lvgl.io/)
@@ -659,14 +735,4 @@ Das Gerät startet dann ohne Settings und geht automatisch in AP-Modus.
 
 ## Lizenz
 
-MIT License — siehe `LICENSE` (falls vorhanden, sonst bitte ergänzen).
-## Webflasher
-
-A web-based flasher is provided at `docs/index.html`. Open that file in a browser (or host the `docs/` folder via GitHub Pages) to use the webflasher UI. A copy of the prebuilt firmware is included at `docs/firmware.bin`.
-
-Usage:
-1. Put the device into flash mode (hold BOOT while powering or use the device's setup page).
-2. Open `docs/index.html` in a browser.
-3. Select `firmware.bin` and follow the on-screen instructions to flash the ESP32.
-
-Note: Verify the board is in flash mode before proceeding. Alternatively use esptool.py for manual flashing.
+MIT License — siehe `LICENSE`.
