@@ -1,4 +1,5 @@
 # CYD_over_Mqtt_Solar-Display (LVGL)
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg) ![Framework](https://img.shields.io/badge/framework-Arduino-green.svg) ![Protocol](https://img.shields.io/badge/protocol-MQTT-purple.svg) ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Compatible-41BDF5?style=flat-square&logo=homeassistant&logoColor=white)
 
 Ein MQTT-gestütztes Statusdisplay für Photovoltaikanlagen. Zeigt PV-Leistung,
 Batteriezustand, Stromfluss, Tagesstatistiken sowie Wetterdaten
@@ -123,7 +124,7 @@ Vorgehen:
 > angesteuert werden müssen.
 >
 > **Lösung:** Auch ohne sichtbares Display ist der Setup-AP aktiv. Mit
-> dem WLAN **`CYD-Solar`** verbinden, im Browser **http://192.168.4.1**
+> dem WLAN **`SolarDisplay-Setup`** verbinden, im Browser **http://192.168.4.1**
 > öffnen und im Web-Formular einen anderen Display-Controller auswählen.
 > Nach dem Speichern startet der ESP neu — wenn der Bildschirm jetzt
 > normal erscheint, war es die richtige Wahl. Sonst nochmal eine andere
