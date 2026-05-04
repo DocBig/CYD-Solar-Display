@@ -41,20 +41,21 @@ def copy_bins(target, source, env):
     dst = os.path.join(project_dir, "docs")
     os.makedirs(dst, exist_ok=True)
 
-    # Copy any standalone .bin files produced by the build
-    bin_files = glob.glob(os.path.join(build_dir, "*.bin"))
-    copied = False
-    for src in sorted(bin_files):
-        if os.path.isfile(src):
-            shutil.copy2(src, dst)
-            print("[post-build] Copied {} -> {}".format(src, dst))
-            copied = True
-
-    # If we have bootloader, partitions and app firmware, create a single 0x0 image
+    # Prefer creating a combined 0x0 image (bootloader/partitions/app)
     mapping = [("bootloader.bin", 0x1000), ("partitions.bin", 0x8000), ("firmware.bin", 0x10000)]
     combined = _create_combined_image(build_dir, dst, mapping)
-    if not combined and not copied:
-        print("[post-build] No firmware files found to copy in {}".format(build_dir))
+    if combined:
+        # Combined image written as docs/firmware.bin; do not copy other .bin files
+        return
+
+    # Fallback: if only firmware.bin exists, copy it (still named firmware.bin in docs)
+    src_fw = os.path.join(build_dir, "firmware.bin")
+    if os.path.isfile(src_fw):
+        shutil.copy2(src_fw, dst)
+        print("[post-build] Copied firmware {} -> {}".format(src_fw, dst))
+        return
+
+    print("[post-build] No firmware files found to copy in {}".format(build_dir))
 
 
 # Run after the final firmware binary is written
