@@ -15,7 +15,7 @@ Growatt, SMA, Solax, Fronius und allen anderen Herstellern, wenn deren
 Daten auf die im Abschnitt [Benötigte MQTT-Daten](#benötigte-mqtt-daten)
 beschriebenen Topic-Namen gemappt werden.
 
-![Screen](docs/cyd_solar_overview.jpg)
+![Screen](docs/cyd_solar_overview.jpg) 
 
 ---
 
@@ -114,6 +114,22 @@ Vorgehen:
 3. **"Install"** klicken, Port auswählen
 4. Firmware wird in ~30 Sekunden geflasht
 5. Display zeigt einen QR-Code → mit dem Setup-AP verbinden und konfigurieren
+
+> **❓ Kein QR-Code, weißer Bildschirm oder verzerrte Anzeige?**
+>
+> Das ist normal beim ersten Start — der Display-Controller passt noch nicht
+> zur tatsächlichen Hardware. Es gibt drei CYD-Panel-Varianten (ST7789,
+> ILI9341, ILI9342), die optisch identisch aussehen, aber unterschiedlich
+> angesteuert werden müssen.
+>
+> **Lösung:** Auch ohne sichtbares Display ist der Setup-AP aktiv. Mit
+> dem WLAN **`CYD-Solar`** verbinden, im Browser **http://192.168.4.1**
+> öffnen und im Web-Formular einen anderen Display-Controller auswählen.
+> Nach dem Speichern startet der ESP neu — wenn der Bildschirm jetzt
+> normal erscheint, war es die richtige Wahl. Sonst nochmal eine andere
+> Variante probieren (es gibt nur drei).
+>
+> Mehr Details siehe [Panel-Varianten](#panel-varianten-st7789--ili9341--ili9342).
 
 Funktioniert für alle drei CYD-Varianten (ST7789 / ILI9341 / ILI9342) — der
 Display-Controller wird im Web-Setup ausgewählt.
@@ -731,6 +747,7 @@ eher Gedanken zum Vormerken:
   von @kellerza, funktioniert aber mit jeder MQTT-Quelle, die die
   passenden Topics bereitstellt.
 
+---
 
 ## Lizenz
 
