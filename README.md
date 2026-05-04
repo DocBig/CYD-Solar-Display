@@ -731,7 +731,6 @@ eher Gedanken zum Vormerken:
   von @kellerza, funktioniert aber mit jeder MQTT-Quelle, die die
   passenden Topics bereitstellt.
 
----
 
 ## Lizenz
 
